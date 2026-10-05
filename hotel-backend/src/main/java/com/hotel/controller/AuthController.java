@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestClient;
 
 import com.hotel.model.dto.MemberDTO;
 import com.hotel.model.entity.Account;
@@ -28,10 +30,10 @@ import com.hotel.util.JsonUtils;
 import com.hotel.util.JwtUtils;
 import com.hotel.util.MailUtil;
 
-import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 
 @RestController
-@AllArgsConstructor
+@RequiredArgsConstructor
 @RequestMapping("/api/auth")
 public class AuthController {
     private final PasswordEncoder passwordEncoder;
@@ -41,6 +43,14 @@ public class AuthController {
     private final ProfileRepository profileRepository;
     private final MemberService memberService;
     private final MailUtil mailUtil;
+
+    @Value("${google.client-id}")
+    private String googleClientId;
+
+    private final RestClient restClient = RestClient.create();
+
+    // Google Token 驗證結果
+    private record GoogleUserInfo(String email, String name, String avatarUrl) {}
 
     // 儲存 Email 與驗證碼資訊 (驗證碼、過期時間)
     private static class VerificationCodeRecord {
@@ -239,39 +249,21 @@ public class AuthController {
     @PostMapping("/google-login")
     public ResponseEntity<?> googleLogin(@RequestBody Map<String, String> request) {
         String credential = request.get("credential");
-        String email = request.get("email");
-        String name = request.get("name");
-        String avatarUrl = request.get("avatarUrl");
-
-        // 若傳入 Google Credential (JWT)，解析 Payload 取得 email, name 與 picture (avatarUrl)
-        if (credential != null && !credential.isBlank()) {
-            try {
-                String[] parts = credential.split("\\.");
-                if (parts.length >= 2) {
-                    byte[] decodedBytes = java.util.Base64.getUrlDecoder().decode(parts[1]);
-                    String jsonStr = new String(decodedBytes, java.nio.charset.StandardCharsets.UTF_8);
-                    Map<String, Object> payload = JsonUtils.toMap(jsonStr);
-                    if (payload != null) {
-                        if (payload.get("email") != null) {
-                            email = String.valueOf(payload.get("email"));
-                        }
-                        if (payload.get("name") != null && (name == null || name.isBlank())) {
-                            name = String.valueOf(payload.get("name"));
-                        }
-                        if (payload.get("picture") != null && (avatarUrl == null || avatarUrl.isBlank())) {
-                            avatarUrl = String.valueOf(payload.get("picture"));
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                // 解析失敗時使用原本傳入的 email、name 與 avatarUrl
-            }
+        if (credential == null || credential.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "未提供有效的 Google 授權憑證"));
         }
 
-        if (email == null || email.trim().isEmpty() || !email.contains("@")) {
-            return ResponseEntity.badRequest().body(Map.of("message", "未取得有效的 Google 電子信箱"));
+        // 後端嚴格校驗 Google ID Token (簽章、過期時間、受眾 aud 與 email_verified)
+        GoogleUserInfo googleUser = verifyGoogleToken(credential);
+        if (googleUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("message", "Google 授權憑證無效、過期或簽名驗證失敗"));
         }
-        email = email.trim().toLowerCase();
+
+        String email = googleUser.email();
+        String name = googleUser.name();
+        String avatarUrl = googleUser.avatarUrl();
 
         // 查詢是否已存在以此 Email 註冊的會員
         Profile profile = profileRepository.findFirstByEmail(email).orElse(null);
@@ -304,7 +296,7 @@ public class AuthController {
             response.put("token", token);
             response.put("authorities", authorities);
             response.put("name", displayName);
-            response.put("avatarUrl", profile != null ? profile.getAvatarUrl() : null);
+            response.put("avatarUrl", profile.getAvatarUrl() != null ? profile.getAvatarUrl() : avatarUrl);
             response.put("username", user.getUsername());
             return ResponseEntity.ok(response);
         } else {
@@ -321,6 +313,59 @@ public class AuthController {
             response.put("googleVerifiedCode", googleVerifiedCode);
             response.put("message", "此 Google 帳號尚未註冊，即將為您引導至註冊頁面並帶入資料");
             return ResponseEntity.ok(response);
+        }
+    }
+
+    /**
+     * 呼叫 Google 官方 tokeninfo 端點校驗 ID Token 簽章、發行者、受眾與 email_verified
+     */
+    private GoogleUserInfo verifyGoogleToken(String idToken) {
+        if (idToken == null || idToken.isBlank()) {
+            return null;
+        }
+        try {
+            String responseBody = restClient.get()
+                    .uri("https://oauth2.googleapis.com/tokeninfo?id_token={token}", idToken)
+                    .retrieve()
+                    .body(String.class);
+
+            Map<String, Object> payload = JsonUtils.toMap(responseBody);
+            if (payload == null) {
+                return null;
+            }
+
+            // 1. 驗證 issuer
+            String iss = String.valueOf(payload.get("iss"));
+            if (!"accounts.google.com".equals(iss) && !"https://accounts.google.com".equals(iss)) {
+                return null;
+            }
+
+            // 2. 驗證 audience / azp 符合本系統 Client ID
+            String aud = String.valueOf(payload.get("aud"));
+            String azp = String.valueOf(payload.get("azp"));
+            if (!googleClientId.equals(aud) && !googleClientId.equals(azp)) {
+                return null;
+            }
+
+            // 3. 驗證信箱通過 Google 認證
+            Object emailVerified = payload.get("email_verified");
+            if (!"true".equalsIgnoreCase(String.valueOf(emailVerified))) {
+                return null;
+            }
+
+            // 4. 提取真實使用者資訊
+            String email = String.valueOf(payload.get("email")).trim().toLowerCase();
+            if (email.isEmpty() || !email.contains("@")) {
+                return null;
+            }
+
+            String name = payload.get("name") != null ? String.valueOf(payload.get("name")) : "";
+            String picture = payload.get("picture") != null ? String.valueOf(payload.get("picture")) : "";
+
+            return new GoogleUserInfo(email, name, picture);
+        } catch (Exception e) {
+            // Google API 回應非 200 (Token 無效或過期) 或連線異常
+            return null;
         }
     }
 

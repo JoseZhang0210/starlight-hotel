@@ -399,56 +399,47 @@ const loading = ref(false);
 const { sendingCode, countdown, startCountdown } = useVerificationCode();
 
 onMounted(() => {
-  let googleData = null;
   const sessionData = sessionStorage.getItem("google_signup_data");
-  if (sessionData) {
-    try {
-      googleData = JSON.parse(sessionData);
-    } catch (e) {
-      console.warn("解析 Google 暫存資料失敗：", e);
-    }
-  }
+  if (!sessionData) return;
 
-  const queryFrom = route.query.from;
-  const queryEmail = route.query.email ? decodeURIComponent(route.query.email) : "";
-  const queryName = route.query.name ? decodeURIComponent(route.query.name) : "";
-  const queryAvatarUrl = route.query.avatarUrl ? decodeURIComponent(route.query.avatarUrl) : "";
-  const queryCode = route.query.code || "";
+  try {
+    const googleData = JSON.parse(sessionData);
+    if (googleData?.from === "google") {
+      isGoogleSignup.value = true;
+      const targetEmail = googleData.email || "";
+      const targetName = googleData.name || "";
+      const targetAvatarUrl = googleData.avatarUrl || "";
 
-  if (queryFrom === "google" || (googleData && googleData.from === "google")) {
-    isGoogleSignup.value = true;
-    const targetEmail = queryEmail || googleData?.email || "";
-    const targetName = queryName || googleData?.name || "";
-    const targetAvatarUrl = queryAvatarUrl || googleData?.avatarUrl || "";
-    const targetCode = queryCode || googleData?.googleVerifiedCode || "";
-
-    if (targetEmail) {
-      form.email = targetEmail;
-      googleInfo.email = targetEmail;
-    }
-    if (targetName) {
-      form.name = targetName;
-      googleInfo.name = targetName;
-    }
-    if (targetAvatarUrl) {
-      form.avatarUrl = targetAvatarUrl;
-      googleInfo.avatarUrl = targetAvatarUrl;
-    }
-    if (targetCode) {
-      form.verificationCode = targetCode;
-    }
-
-    if (targetEmail && !form.username) {
-      let suggestedUsername = targetEmail.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "");
-      if (suggestedUsername.length < 4) {
-        suggestedUsername = suggestedUsername + "1234".substring(0, 4 - suggestedUsername.length);
-      } else if (suggestedUsername.length > 20) {
-        suggestedUsername = suggestedUsername.substring(0, 20);
+      if (targetEmail) {
+        form.email = targetEmail;
+        googleInfo.email = targetEmail;
       }
-      form.username = suggestedUsername;
-    }
+      if (targetName) {
+        form.name = targetName;
+        googleInfo.name = targetName;
+      }
+      if (targetAvatarUrl) {
+        form.avatarUrl = targetAvatarUrl;
+        googleInfo.avatarUrl = targetAvatarUrl;
+      }
+      if (googleData.googleVerifiedCode) {
+        form.verificationCode = googleData.googleVerifiedCode;
+      }
 
-    toastStore.showToast("🌟 已為您帶入 Google 帳號資料，請設定密碼完成註冊！", "info");
+      if (targetEmail && !form.username) {
+        let suggestedUsername = targetEmail.split("@")[0].replace(/[^a-zA-Z0-9_]/g, "");
+        if (suggestedUsername.length < 4) {
+          suggestedUsername = suggestedUsername + "1234".substring(0, 4 - suggestedUsername.length);
+        } else if (suggestedUsername.length > 20) {
+          suggestedUsername = suggestedUsername.substring(0, 20);
+        }
+        form.username = suggestedUsername;
+      }
+
+      toastStore.showToast("🌟 已為您帶入 Google 帳號資料，請設定密碼完成註冊！", "info");
+    }
+  } catch (e) {
+    console.warn("解析 Google 暫存資料失敗：", e);
   }
 });
 

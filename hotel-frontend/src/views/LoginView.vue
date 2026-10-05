@@ -172,26 +172,6 @@ function fillDemoAccount() {
   password.value = "123456";
 }
 
-function parseJwtPayload(token) {
-  if (!token) return null;
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split("")
-        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-        .join("")
-    );
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    console.warn("解析 Google Token 失敗：", e);
-    return null;
-  }
-}
-
 function initGoogleSignIn() {
   if (window.google?.accounts?.id) {
     try {
@@ -234,20 +214,10 @@ async function handleGoogleCredentialResponse(response) {
   messageType.value = "success";
 
   try {
-    const payload = parseJwtPayload(response.credential);
-    const email = payload?.email || "";
-    const name = payload?.name || payload?.given_name || "";
-    const avatarUrl = payload?.picture || "";
-
     const res = await fetch("/api/auth/google-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        credential: response.credential,
-        email,
-        name,
-        avatarUrl,
-      }),
+      body: JSON.stringify({ credential: response.credential }),
     });
 
     const data = await res.json().catch(() => ({}));
@@ -276,9 +246,9 @@ async function handleGoogleCredentialResponse(response) {
       messageType.value = "success";
 
       const googleSignupData = {
-        email: data.email || email,
-        name: data.name || name,
-        avatarUrl: data.avatarUrl || avatarUrl || "",
+        email: data.email || "",
+        name: data.name || "",
+        avatarUrl: data.avatarUrl || "",
         googleVerifiedCode: data.googleVerifiedCode || "",
         from: "google",
       };
@@ -286,16 +256,7 @@ async function handleGoogleCredentialResponse(response) {
       sessionStorage.setItem("google_signup_data", JSON.stringify(googleSignupData));
       await delay(1200);
 
-      router.push({
-        path: "/register",
-        query: {
-          from: "google",
-          email: encodeURIComponent(googleSignupData.email),
-          name: encodeURIComponent(googleSignupData.name),
-          avatarUrl: googleSignupData.avatarUrl ? encodeURIComponent(googleSignupData.avatarUrl) : "",
-          code: googleSignupData.googleVerifiedCode,
-        },
-      });
+      router.push("/register");
     }
   } catch (error) {
     console.error("Google 登入連線錯誤：", error);
@@ -308,58 +269,15 @@ async function handleGoogleCredentialResponse(response) {
 
 async function triggerCustomGoogleSignIn() {
   if (window.google?.accounts?.id) {
-    window.google.accounts.id.prompt();
-  } else {
-    const inputEmail = window.prompt("請輸入要進行 Google 登入驗證的 Email 信箱：", "test_user@gmail.com");
-    if (!inputEmail || !inputEmail.trim()) return;
-
-    loading.value = true;
     try {
-      const res = await fetch("/api/auth/google-login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: inputEmail.trim(),
-          name: inputEmail.split("@")[0],
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.registered) {
-        authStore.login(data.token, data.authorities, data.name, data.avatarUrl);
-        showLoginAnimation.value = true;
-        await delay(2200);
-        if (data.authorities && data.authorities.includes("ROLE_ADMIN")) {
-          await router.push("/admin");
-        } else {
-          await router.push("/");
-        }
-      } else {
-        const googleSignupData = {
-          email: data.email || inputEmail.trim(),
-          name: data.name || inputEmail.split("@")[0],
-          avatarUrl: data.avatarUrl || "",
-          googleVerifiedCode: data.googleVerifiedCode || "",
-          from: "google",
-        };
-        sessionStorage.setItem("google_signup_data", JSON.stringify(googleSignupData));
-        router.push({
-          path: "/register",
-          query: {
-            from: "google",
-            email: encodeURIComponent(googleSignupData.email),
-            name: encodeURIComponent(googleSignupData.name),
-            avatarUrl: googleSignupData.avatarUrl ? encodeURIComponent(googleSignupData.avatarUrl) : "",
-            code: googleSignupData.googleVerifiedCode,
-          },
-        });
-      }
+      initGoogleSignIn();
+      window.google.accounts.id.prompt();
     } catch (e) {
-      console.error(e);
-      message.value = "Google 登入請求失敗";
-      messageType.value = "error";
-    } finally {
-      loading.value = false;
+      console.warn("喚醒 Google 登入失敗：", e);
     }
+  } else {
+    message.value = "Google 登入服務載入中，請稍候重試或檢查網路連線";
+    messageType.value = "error";
   }
 }
 
