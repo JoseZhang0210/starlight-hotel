@@ -36,13 +36,14 @@ import AdminRoomImageView from "../views/AdminRoomImageView.vue";
 import AdminRoomTaskView from "../views/AdminRoomTaskView.vue";
 import AdminRoomBookingView from "../views/AdminRoomBookingView.vue";
 import AdminRoomBookingPaymentView from "../views/AdminRoomBookingPaymentView.vue";
+import AdminRoomAccessMonitorView from "../views/AdminRoomAccessMonitorView.vue";
 
 // ---------------購物車 / 結帳 / 付款-------------------
 import CartView from "../views/CartView.vue";
 import CheckoutView from "../views/CheckoutView.vue";
 import PaymentView from "../views/PaymentView.vue";
 // ---------------優惠券-------------------
-import AdminCouponsView  from "@/views/AdminCouponsView.vue";
+import AdminCouponsView from "@/views/AdminCouponsView.vue";
 
 //--------------- 會員中心 -----------------
 import MemberLayout from "../layouts/MemberLayout.vue";
@@ -168,6 +169,12 @@ const router = createRouter({
           component: AdminRoomBookingPaymentView,
           meta: { permissions: ["ROOM_MANAGE", "BOOKING_MANAGE"] },
         },
+        {
+          path: "room-access-monitor",
+          name: "admin-room-access-monitor",
+          component: AdminRoomAccessMonitorView,
+          meta: { permissions: ["ROOM_MANAGE", "BOOKING_MANAGE"] },
+        },
         //===============================
         {
           path: "venues",
@@ -250,10 +257,10 @@ const router = createRouter({
           component: RestaurantManageView,
         },
         {
-              path: "restaurant-reservation",
-              name: "restaurant-reservation",
-              component: RestaurantReservationView,
-            },
+          path: "restaurant-reservation",
+          name: "restaurant-reservation",
+          component: RestaurantReservationView,
+        },
         {
           path: "restaurant-times",
           name: "restaurant-times",
@@ -275,19 +282,19 @@ const router = createRouter({
           component: () => import("../views/AboutView.vue"),
         },
         {
-          path: '/room-booking',
-          name: 'room-booking',
-          component: () => import('../views/RoomBookingView.vue')
+          path: "/room-booking",
+          name: "room-booking",
+          component: () => import("../views/RoomBookingView.vue"),
         },
         {
-          path: '/room-selection',
-          name: 'room-selection',
-          component: () => import('../views/RoomSelectionView.vue')
+          path: "/room-selection",
+          name: "room-selection",
+          component: () => import("../views/RoomSelectionView.vue"),
         },
         {
-          path: '/room-checkout',
-          name: 'room-checkout',
-          component: () => import('../views/RoomCheckoutView.vue')
+          path: "/room-checkout",
+          name: "room-checkout",
+          component: () => import("../views/RoomCheckoutView.vue"),
         },
         {
           path: "my-orders",
@@ -326,9 +333,10 @@ const router = createRouter({
             {
               path: "room-bookings",
               name: "member-room-bookings",
-              component: () => import('../views/MemberRoomBookingView.vue'),
+              component: () => import("../views/MemberRoomBookingView.vue"),
             },
-            { // 新增會員專屬場地預約入口。
+            {
+              // 新增會員專屬場地預約入口。
               path: "rentals", // 完整網址為 /member/rentals。
               name: "member-rentals", // 提供場地頁面辨識會員模式。
               component: RentalView, // 重用場地頁面並由後端限制本人資料。
@@ -354,7 +362,9 @@ router.beforeEach(async (to, from, next) => {
       await authStore.checkAndRefreshToken();
     }
 
-    const isAdminRoute = to.matched.some((record) => record.meta?.requiresEmployee) || to.path.startsWith("/admin");
+    const isAdminRoute =
+      to.matched.some((record) => record.meta?.requiresEmployee) ||
+      to.path.startsWith("/admin");
 
     if (isAdminRoute) {
       // 1. 檢查是否已登入
@@ -376,14 +386,21 @@ router.beforeEach(async (to, from, next) => {
       const requiredPermissions = to.meta?.permissions;
 
       if (requiredPermission && !authStore.hasPermission(requiredPermission)) {
-        console.warn(`缺乏指定後台權限 [${requiredPermission}]，重定向至後台首頁`);
+        console.warn(
+          `缺乏指定後台權限 [${requiredPermission}]，重定向至後台首頁`,
+        );
         if (to.path !== "/admin") {
           return next({ path: "/admin" });
         }
       }
 
-      if (requiredPermissions && !authStore.hasAnyPermission(requiredPermissions)) {
-        console.warn(`缺乏指定後台權限清單 [${requiredPermissions.join(", ")}]，重定向至後台首頁`);
+      if (
+        requiredPermissions &&
+        !authStore.hasAnyPermission(requiredPermissions)
+      ) {
+        console.warn(
+          `缺乏指定後台權限清單 [${requiredPermissions.join(", ")}]，重定向至後台首頁`,
+        );
         if (to.path !== "/admin") {
           return next({ path: "/admin" });
         }

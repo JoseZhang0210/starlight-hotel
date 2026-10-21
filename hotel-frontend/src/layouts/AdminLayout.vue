@@ -59,7 +59,9 @@
             <div class="sidebar-submenu-inner">
               <div class="sidebar-submenu">
                 <RouterLink to="/admin/restaurants"> 餐廳資料管理 </RouterLink>
-                <RouterLink to="/admin/restaurant-times"> 餐廳時段管理 </RouterLink>
+                <RouterLink to="/admin/restaurant-times">
+                  餐廳時段管理
+                </RouterLink>
                 <RouterLink to="/admin/reservations"> 餐廳訂位管理 </RouterLink>
               </div>
             </div>
@@ -125,6 +127,16 @@
                   to="/admin/booking-payments"
                   >付款紀錄</RouterLink
                 >
+                <RouterLink
+                  v-if="
+                    authStore.hasAnyPermission([
+                      'ROOM_MANAGE',
+                      'BOOKING_MANAGE',
+                    ])
+                  "
+                  to="/admin/room-access-monitor"
+                  >門禁卡片監控</RouterLink
+                >
               </div>
             </div>
           </div>
@@ -133,7 +145,9 @@
 
         <!-- 帳號管理群組 -->
         <div
-          v-if="authStore.hasAnyPermission(['MEMBER_MANAGE', 'EMPLOYEE_MANAGE'])"
+          v-if="
+            authStore.hasAnyPermission(['MEMBER_MANAGE', 'EMPLOYEE_MANAGE'])
+          "
           class="sidebar-group"
         >
           <button
@@ -252,10 +266,7 @@
             <span class="user-greeting-text">{{ displayName }} 您好</span>
           </div>
 
-          <RouterLink
-            to="/"
-            class="admin-home-button"
-          >
+          <RouterLink to="/" class="admin-home-button">
             <Home class="admin-home-icon" :size="18" aria-hidden="true" />
             <span>回首頁</span>
           </RouterLink>
